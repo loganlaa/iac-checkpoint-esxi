@@ -1,0 +1,36 @@
+# Copie este arquivo para terraform.tfvars e preencha os valores reais.
+# Nunca versione terraform.tfvars no Git.
+
+esxi_hostname  = "172.16.120.122"
+esxi_ssh_port  = "22"
+esxi_ssl_port  = "443"
+esxi_username  = "<PREENCHER_USUARIO_ESXI>"
+esxi_password  = "<PREENCHER_SENHA_ESXI>"
+esxi_datastore = "<PREENCHER_NOME_DATASTORE>"
+
+# Port Group de gerenciamento ja existente no ESXi (nao sera alterado)
+mgmt_portgroup_name = "<PREENCHER_PORTGROUP_MGMT>"
+
+# Novo Standard vSwitch e VLANs
+lab_vswitch_name        = "vSwitch_LAB_CP"
+lab_vswitch_uplinks     = [] # Opcional: ["vmnic1"] se houver uplink fisico
+internal_portgroup_name = "VLAN_INTERNAL"
+vlan_internal_id        = 0 # Substituir pela VLAN ID real (ou manter 0 sem tag)
+sync_portgroup_name     = "VLAN_SYNC"
+vlan_sync_id            = 0 # Substituir pela VLAN ID real (ou manter 0 sem tag)
+
+# Segmento WAN/External opcional (somente habilitar apos aprovacao)
+enable_wan_segment = false
+
+# Recursos das VMs (padrao: 2 vCPUs, 8 GB RAM, 200 GB thin)
+vm_vcpus         = 2
+vm_ram_mb        = 8192
+vm_disk_gb       = 200
+vm_disk_type     = "thin"
+vm_hw_version    = "13"
+vm_initial_power = "off"
+
+# Caminhos das ISOs no datastore ESXi (usados pelo script scripts/attach-iso.sh)
+checkpoint_iso_path     = "[<DATASTORE>] ISO/<CHECKPOINT_GAIA.iso>"
+windows_server_iso_path = "[<DATASTORE>] ISO/<WINDOWS_SERVER.iso>"
+windows_client_iso_path = "[<DATASTORE>] ISO/<WINDOWS_CLIENT.iso>"

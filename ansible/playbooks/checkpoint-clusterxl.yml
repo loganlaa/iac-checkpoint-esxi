@@ -1,0 +1,54 @@
+---
+# Playbook de preparacao pos-instalacao Gaia para ClusterXL HA (FW1-LOGAN e FW2-LOGAN).
+# Pre-requisito: Gaia instalado via ISO/First Time Wizard com SSH/Clish acessivel.
+# Collection necessaria: ansible-galaxy collection install check_point.gaia check_point.mgmt
+
+- name: Configurar interfaces de rede no Gaia OS (FW1-LOGAN e FW2-LOGAN)
+  hosts: checkpoint_gateways
+  gather_facts: false
+  vars:
+    external_subnet_prefix: 24
+    internal_subnet_prefix: 24
+    sync_subnet_prefix: 30
+    fw_external_ips:
+      FW1-LOGAN: "172.16.120.227"
+      FW2-LOGAN: "172.16.120.228"
+    fw_internal_ips:
+      FW1-LOGAN: "192.168.10.2"
+      FW2-LOGAN: "192.168.10.3"
+    fw_sync_ips:
+      FW1-LOGAN: "192.0.0.1"
+      FW2-LOGAN: "192.0.0.2"
+
+  tasks:
+    - name: Configurar eth0 (External), eth1 (Internal) e eth2 (Sync) via clish
+      ansible.builtin.raw: |
+        clish -c "set interface eth0 ipv4-address {{ fw_external_ips[inventory_hostname] }} mask-length {{ external_subnet_prefix }}" -s
+        clish -c "set interface eth0 state on" -s
+        clish -c "set interface eth1 ipv4-address {{ fw_internal_ips[inventory_hostname] }} mask-length {{ internal_subnet_prefix }}" -s
+        clish -c "set interface eth1 state on" -s
+        clish -c "set interface eth2 ipv4-address {{ fw_sync_ips[inventory_hostname] }} mask-length {{ sync_subnet_prefix }}" -s
+        clish -c "set interface eth2 state on" -s
+        clish -c "save config"
+      changed_when: true
+
+    - name: Verificar status das interfaces
+      ansible.builtin.raw: |
+        clish -c "show interfaces all"
+      register: gaia_ifaces
+      changed_when: false
+
+- name: Configurar interface interna no SMS-LOGAN
+  hosts: checkpoint_sms
+  gather_facts: false
+  vars:
+    sms_internal_ip: "192.168.10.10"
+    sms_subnet_prefix: 24
+
+  tasks:
+    - name: Configurar eth0 (NET-INT-LOGAN) no SMS-LOGAN via clish
+      ansible.builtin.raw: |
+        clish -c "set interface eth0 ipv4-address {{ sms_internal_ip }} mask-length {{ sms_subnet_prefix }}" -s
+        clish -c "set interface eth0 state on" -s
+        clish -c "save config"
+      changed_when: true

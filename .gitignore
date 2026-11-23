@@ -1,0 +1,21 @@
+# Arquivos locais e estado Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Variaveis sensiveis e inventarios locais
+*.tfvars
+!terraform.tfvars.example
+ansible/inventory/hosts.ini
+*.retry
+
+# Chaves, certificados e arquivos temporarios
+*.pem
+*.key
+*.pfx
+.DS_Store

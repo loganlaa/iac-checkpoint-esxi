@@ -1,0 +1,102 @@
+---
+# Playbook pos-instalacao Windows Server (AD-LOGAN) e Windows Client (WIN-LOGAN).
+# Pre-requisito: Windows instalado e WinRM habilitado nas VMs.
+# Collections: ansible-galaxy collection install ansible.windows microsoft.ad
+
+- name: Configurar AD-LOGAN (IP estatico, AD DS, DNS, DHCP, AD CS)
+  hosts: windows_dc
+  gather_facts: false
+  vars:
+    dc_ip: "192.168.10.5"
+    dc_prefix_length: 24
+    ad_domain_name: "logan.local"
+    ad_netbios_name: "LOGAN"
+    safe_mode_password: "{{ lookup('env', 'AD_DSRM_PASSWORD') }}"
+    dhcp_scope_name: "NET-INT-LOGAN"
+    dhcp_subnet_id: "192.168.10.0"
+    dhcp_subnet_mask: "255.255.255.0"
+    dhcp_start_range: "192.168.10.15"
+    dhcp_end_range: "192.168.10.40"
+    cluster_vip: "192.168.10.1"
+
+  tasks:
+    - name: Garantir IP estatico 192.168.10.5/24 no AD-LOGAN
+      ansible.windows.win_powershell:
+        script: |
+          $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+          if (-not (Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress "{{ dc_ip }}" -ErrorAction SilentlyContinue)) {
+            Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+            New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress "{{ dc_ip }}" -PrefixLength {{ dc_prefix_length }} -DefaultGateway "{{ cluster_vip }}"
+          }
+          Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses "{{ dc_ip }}"
+
+    - name: Instalar roles AD DS, DNS, DHCP e AD CS
+      ansible.windows.win_feature:
+        name:
+          - AD-Domain-Services
+          - DNS
+          - DHCP
+          - ADCS-Cert-Authority
+        include_management_tools: true
+        state: present
+
+    - name: Promover AD-LOGAN a Domain Controller (nova floresta)
+      microsoft.ad.domain:
+        dns_domain_name: "{{ ad_domain_name }}"
+        domain_netbios_name: "{{ ad_netbios_name }}"
+        safe_mode_password: "{{ safe_mode_password }}"
+      register: ad_promo
+
+    - name: Reiniciar apos promocao do Domain Controller
+      ansible.windows.win_reboot:
+      when: ad_promo.reboot_required | default(false)
+
+    - name: Configurar DHCP Scope e opcoes de rede (Gateway e DNS)
+      ansible.windows.win_powershell:
+        script: |
+          Add-DhcpServerInDC -DnsName "$env:COMPUTERNAME.{{ ad_domain_name }}" -ErrorAction SilentlyContinue
+          if (-not (Get-DhcpServerv4Scope -ScopeId "{{ dhcp_subnet_id }}" -ErrorAction SilentlyContinue)) {
+            Add-DhcpServerv4Scope -Name "{{ dhcp_scope_name }}" -StartRange "{{ dhcp_start_range }}" -EndRange "{{ dhcp_end_range }}" -SubnetMask "{{ dhcp_subnet_mask }}" -State Active
+          }
+          Set-DhcpServerv4OptionValue -ScopeId "{{ dhcp_subnet_id }}" -Router "{{ cluster_vip }}" -DnsServer "{{ dc_ip }}" -DnsDomain "{{ ad_domain_name }}"
+          Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -Force -ErrorAction SilentlyContinue
+
+- name: Configurar WIN-LOGAN (IP estatico, DNS e join no dominio)
+  hosts: windows_clients
+  gather_facts: false
+  vars:
+    client_ip: "192.168.10.4"
+    client_prefix_length: 24
+    cluster_vip: "192.168.10.1"
+    dns_server_ip: "192.168.10.5"
+    ad_domain_name: "logan.local"
+    ad_join_user: "{{ lookup('env', 'AD_ADMIN_USER') }}"
+    ad_join_password: "{{ lookup('env', 'AD_ADMIN_PASSWORD') }}"
+
+  tasks:
+    - name: Garantir IP estatico 192.168.10.4/24 no WIN-LOGAN
+      ansible.windows.win_powershell:
+        script: |
+          $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+          if (-not (Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress "{{ client_ip }}" -ErrorAction SilentlyContinue)) {
+            Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+            New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress "{{ client_ip }}" -PrefixLength {{ client_prefix_length }} -DefaultGateway "{{ cluster_vip }}"
+          }
+
+    - name: Apontar DNS para AD-LOGAN (192.168.10.5)
+      ansible.windows.win_dns_client:
+        adapter_names: "*"
+        dns_servers:
+          - "{{ dns_server_ip }}"
+
+    - name: Ingressar WIN-LOGAN no dominio
+      microsoft.ad.membership:
+        dns_domain_name: "{{ ad_domain_name }}"
+        domain_admin_user: "{{ ad_join_user }}"
+        domain_admin_password: "{{ ad_join_password }}"
+        state: domain
+      register: domain_join
+
+    - name: Reiniciar WIN-LOGAN apos join no dominio
+      ansible.windows.win_reboot:
+      when: domain_join.reboot_required | default(false)

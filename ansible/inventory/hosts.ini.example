@@ -1,0 +1,29 @@
+# Copie para hosts.ini apos instalar os SOs e habilitar SSH/WinRM.
+# Nunca versione hosts.ini com senhas no Git.
+
+[checkpoint_gateways]
+FW1-LOGAN ansible_host=172.16.120.227 cluster_member_id=1
+FW2-LOGAN ansible_host=172.16.120.228 cluster_member_id=2
+
+[checkpoint_sms]
+SMS-LOGAN ansible_host=192.168.10.10
+
+[checkpoint_gateways:vars]
+ansible_user=admin
+ansible_connection=network_cli
+ansible_network_os=checkpoint.gaia.gaia
+
+[windows_dc]
+AD-LOGAN ansible_host=192.168.10.5
+
+[windows_clients]
+WIN-LOGAN ansible_host=192.168.10.4
+
+[windows:children]
+windows_dc
+windows_clients
+
+[windows:vars]
+ansible_connection=winrm
+ansible_winrm_transport=ntlm
+ansible_winrm_server_cert_validation=ignore
